@@ -3,8 +3,16 @@
 Mysql database operation
 */
 
+//#include <stdlib.h>
+//#include "mysql.h"
+//#include <map>
+//#include <vector>
+//#include <string>
+//#include "CommonConnectionPool.h"
+//#include <ctime>
+
 #include <stdlib.h>
-#include "ocilib.h"
+#include "mysql.h"
 #include <string>
 #include <ctime>
 #include <map>
@@ -38,7 +46,7 @@ using namespace std;
 		bool update(std::string sql);
 
 		//select
-		OCI_Resultset* querey(std::string sql);
+		MYSQL_RES* querey(std::string sql);
 
 		/**
 		* @brief get DB variable.
@@ -51,7 +59,7 @@ using namespace std;
 		*
 		* @return MYSQL*
 		*/
-		OCI_Statement* getMysql();
+		MYSQL* getMysql();
 
 		/**
 		* @brief Char transfer.
@@ -299,10 +307,7 @@ using namespace std;
 		//MysqlHelper& operator=(const MysqlHelper& tcMysql);
 
 	private:
-		OCI_Connection* _cn;
-		OCI_Statement* _conn;
-		OCI_Resultset* rs;
-		//MYSQL* _conn;		//a connection to MySQL
+		MYSQL* _conn;		//a connection to MySQL
 		clock_t _aliveTime;	//start time begina alive
 		/**
 		* pointer DB

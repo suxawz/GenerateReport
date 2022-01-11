@@ -7,32 +7,25 @@ using namespace std;
 
 	Connection::Connection()
 	{
-		OCI_Initialize(NULL, NULL, OCI_ENV_DEFAULT);	//init database connection
+		_conn = mysql_init(nullptr);	//init database connection
 	}
 
 	Connection::~Connection()
 	{
 		if (_conn != nullptr)
-			OCI_ConnectionFree(_cn);	//relase database connection
+			mysql_close(_conn);		//relase database connection
 	}
 
 	bool Connection::connect(std::string ip, unsigned short port, std::string user, std::string password, std::string dbname)
 	{
 		//connect to DB
-		//"172.17.216.38:1521/rmbtbssvc"
-		stringstream temp;
-		temp << port;
-		string strport;
-		temp>>strport;
-		std::string ConnStr = ip + ':' + strport + '/' + dbname;
-		_cn = OCI_ConnectionCreate((otext*)ConnStr.c_str(), (otext*)user.c_str(), (otext*)password.c_str() , OCI_SESSION_DEFAULT);
-		_conn = OCI_StatementCreate(_cn);
-		return _conn != nullptr;
+		MYSQL* p = mysql_real_connect(_conn, ip.c_str(), user.c_str(), password.c_str(), dbname.c_str(), port, nullptr, 0);
+		return p != nullptr;
 	}
 
 	bool Connection::update(std::string sql)
 	{
-		if (OCI_ExecuteStmt(_conn, sql.c_str()))	//database update,insert,delete
+		if (mysql_query(_conn, sql.c_str()))	//database update,insert,delete
 		{
 			LOG("¸update error" + sql);
 			return false;
@@ -40,14 +33,14 @@ using namespace std;
 		return true;
 	}
 
-	OCI_Resultset* Connection::querey(std::string sql)
+	MYSQL_RES* Connection::querey(std::string sql)
 	{
-		if (OCI_ExecuteStmt(_conn, sql.c_str()))	//database query,select
+		if (mysql_query(_conn, sql.c_str()))	//database query,select
 		{
 			LOG("query error" + sql);
 			return nullptr;
 		}
-		return rs = OCI_GetResultset(_conn);;
+		return mysql_use_result(_conn);
 	}
 
 	std::string Connection::escapeString(const std::string& sFrom)
@@ -58,16 +51,15 @@ using namespace std;
 
 		memset(pTo, 0x00, iLen);
 
-		//mysql_real_escape_string(_conn, pTo, sFrom.c_str(), sFrom.length());
+		mysql_real_escape_string(_conn, pTo, sFrom.c_str(), sFrom.length());
 
-
-		sTo = sFrom;
+		sTo = pTo;
 
 		free(pTo);
 
 		return sTo;
 	}
-	OCI_Statement* Connection::getMysql(void)
+	MYSQL* Connection::getMysql(void)
 	{
 		return _conn;
 	}
@@ -214,7 +206,7 @@ using namespace std;
 
 		_sLastSql = sSql;
 
-		int iRet = OCI_ExecuteStmt(_conn, sSql.data());
+		int iRet = mysql_real_query(_conn, sSql.c_str(), sSql.length());
 		if (iRet != 0)
 		{
 			///**
@@ -230,7 +222,7 @@ using namespace std;
 
 		if (iRet != 0)
 		{
-			throw Connection_Exception("[Connection::execute]: mysql_query: [ " + sSql + " ] :");
+			throw Connection_Exception("[Connection::execute]: mysql_query: [ " + sSql + " ] :" + std::string(mysql_error(_conn)));
 		}
 	}
 
@@ -248,7 +240,7 @@ using namespace std;
 
 		_sLastSql = sSql;
 
-		int iRet = OCI_ExecuteStmt(_conn, sSql.data());
+		int iRet = mysql_real_query(_conn, sSql.c_str(), sSql.length());
 		if (iRet != 0)
 		{
 			///**
@@ -264,68 +256,56 @@ using namespace std;
 
 		if (iRet != 0)
 		{
-			throw Connection_Exception("[Connection::execute]: mysql_query: [ " + sSql + " ] :");
+			throw Connection_Exception("[Connection::execute]: mysql_query: [ " + sSql + " ] :" + std::string(mysql_error(_conn)));
 		}
 
-		OCI_Resultset* pstRes = OCI_GetResultset(_conn);
+		MYSQL_RES* pstRes = mysql_store_result(_conn);
 
 		if (pstRes == NULL)
 		{
-			throw Connection_Exception("[Connection::queryRecord]: mysql_store_result: " + sSql + " : ");
-
-
-			std::vector<std::string> vtFields;
-			OCI_Column* field;
-			int Column_Index;
-			while ((field = OCI_GetColumn(pstRes, Column_Index)))
-			{
-				vtFields.push_back(OCI_ColumnGetName(field));
-			}
-
-			map<std::string, std::string> mpRow;
-			//const auto stRow;
-			int index = 0;
-
-			while (OCI_FetchNext(pstRes))
-			{
-				index++;
-				mpRow.clear();
-				const auto coll = OCI_GetColl(pstRes, 1);
-				const auto iter = OCI_IterCreate(coll);
-				auto elem = OCI_IterGetNext(iter);
-				int itemIndex = 0;
-				while (elem)
-				{
-					itemIndex++;
-
-					const auto obj = OCI_ElemGetObject(elem);
-					const auto data = OCI_ObjectGetString(obj, OTEXT("name"));
-					if (data)
-					{
-						mpRow[vtFields[itemIndex]] = std::string(data, string(data).size());
-					}
-					else
-					{
-						mpRow[vtFields[itemIndex]] = "";
-					}
-					elem = OCI_IterGetNext(iter);
-				}
-				OCI_IterFree(iter);
-
-				data.data().push_back(mpRow);
-			}
-
-			OCI_StatementFree(_conn);
-
-			return data;
+			throw Connection_Exception("[Connection::queryRecord]: mysql_store_result: " + sSql + " : " + std::string(mysql_error(_conn)));
 		}
+
+		std::vector<std::string> vtFields;
+		MYSQL_FIELD* field;
+		while ((field = mysql_fetch_field(pstRes)))
+		{
+			vtFields.push_back(field->name);
+		}
+
+		map<std::string, std::string> mpRow;
+		MYSQL_ROW stRow;
+
+		while ((stRow = mysql_fetch_row(pstRes)) != (MYSQL_ROW)NULL)
+		{
+			mpRow.clear();
+			unsigned long* lengths = mysql_fetch_lengths(pstRes);
+			for (size_t i = 0; i < vtFields.size(); i++)
+			{
+				if (stRow[i])
+				{
+					mpRow[vtFields[i]] = std::string(stRow[i], lengths[i]);
+				}
+				else
+				{
+					mpRow[vtFields[i]] = "";
+				}
+			}
+
+			data.data().push_back(mpRow);
+		}
+
+		mysql_free_result(pstRes);
+
+		return data;
 	}
+
 	size_t Connection::updateRecord(const std::string& sTableName, const RECORD_DATA& mpColumns, const std::string& sCondition)
 	{
 		std::string sSql = buildUpdateSQL(sTableName, mpColumns, sCondition);
 		execute(sSql);
 
-		return OCI_GetAffectedRows(_conn);
+		return mysql_affected_rows(_conn);
 	}
 
 	size_t Connection::insertRecord(const std::string& sTableName, const RECORD_DATA& mpColumns)
@@ -333,7 +313,7 @@ using namespace std;
 		std::string sSql = buildInsertSQL(sTableName, mpColumns);
 		execute(sSql);
 
-		return OCI_GetAffectedRows(_conn);
+		return mysql_affected_rows(_conn);
 	}
 
 	size_t Connection::replaceRecord(const std::string& sTableName, const RECORD_DATA& mpColumns)
@@ -341,7 +321,7 @@ using namespace std;
 		std::string sSql = buildReplaceSQL(sTableName, mpColumns);
 		execute(sSql);
 
-		return OCI_GetAffectedRows(_conn);
+		return mysql_affected_rows(_conn);
 	}
 
 	size_t Connection::deleteRecord(const std::string& sTableName, const std::string& sCondition)
@@ -351,7 +331,7 @@ using namespace std;
 
 		execute(sSql.str());
 
-		return OCI_GetAffectedRows(_conn);
+		return mysql_affected_rows(_conn);
 	}
 
 	size_t Connection::getRecordCount(const std::string& sTableName, const std::string& sCondition)
@@ -407,12 +387,12 @@ using namespace std;
 
 	long Connection::lastInsertID()
 	{
-		return 0;
+		return mysql_insert_id(_conn);
 	}
 
 	size_t Connection::getAffectedRows()
 	{
-		return OCI_GetAffectedRows(_conn);
+		return mysql_affected_rows(_conn);
 	}
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////////
