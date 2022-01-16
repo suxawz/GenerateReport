@@ -146,13 +146,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="CommonConnectionPool.cpp" />
-    <ClCompile Include="connection.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mysqlhelper.cpp" />
+    <ClCompile Include="nanodbc.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CommonConnectionPool.h" />
-    <ClInclude Include="connection.h" />
+    <ClInclude Include="mysqlhelper.h" />
+    <ClInclude Include="nanodbc.h" />
     <ClInclude Include="public.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
